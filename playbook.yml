@@ -1,0 +1,121 @@
+---
+- hosts: all
+  remote_user: vagrant
+  user: vagrant
+  sudo: yes
+  vars:
+    myuser: vagrant
+  tasks:
+    - name: Actualizando (apt-get update)
+      apt: update_cache=yes
+    - name: Actualizando (apt-get upgrade)
+      apt: upgrade=yes
+    - name: Instalando postgresql
+      apt: pkg=postgresql state=installed
+    - name: Instalando postgresql-contrib
+      apt: pkg=postgresql-contrib state=installed
+    - name: Instalando libpq-dev
+      apt: pkg=libpq-dev state=installed
+    - name: Instalando python-dev
+      apt: pkg=python-dev state=installed
+    - name: Instalando python-psycopg2
+      apt: pkg=python-psycopg2 state=installed
+    - name: Creando base de datos de protoboard en PostgreSQL
+      postgresql_db: name=protoboard state=present
+      sudo_user: postgres
+      sudo: True
+    - name: Creando usuario 'django' en postgreSQL con opciones default
+      postgresql_user: name=django db=protoboard password=secret priv=ALL state=present
+      sudo_user: postgres
+      sudo: True
+    - name: Instalando python-virtualenv
+      apt: pkg=python-virtualenv state=installed
+    - name: Creando directorio /webapps/
+      file: path=/webapps/ state=directory
+    - name: Creando virtualenv 'protoboard' en /webapps/ e instalando 'django' en el
+      pip: name=django virtualenv=/webapps/protoboard/
+    - name: Instalando 'psycopg2' en el virtualenv 'protoboard'
+      pip: name=psycopg2 virtualenv=/webapps/protoboard/
+    - name: Instalando 'redis' en el virtualenv 'protoboard'
+      pip: name=redis virtualenv=/webapps/protoboard/
+    - name: Instalando 'requests' en el virtualenv 'protoboard'
+      pip: name=requests virtualenv=/webapps/protoboard/
+    - name: Creando grupo 'webapps'
+      group: name=webapps system=yes
+    - name: Creando usuario 'prot'
+      user: name=protoboard system=yes group=webapps home=/webapps/protoboard/
+    - name: Instalando 'gunicorn' en el virtualenv 'protoboard'
+      pip: name=gunicorn virtualenv=/webapps/protoboard/
+    - name: Instalando 'git'
+      apt: pkg=git-core state=installed
+    - name: Instalando 'libxml2'
+      apt: pkg=libxml2 state=installed
+    - name: Instalando 'libxslt-dev'
+      apt: pkg=libxslt-dev state=installed
+    - name: Instalando 'lxml' en el virtualenv 'protoboard'
+      pip: name=lxml virtualenv=/webapps/protoboard/
+    - name: Instalando 'pil' en el virtualenv 'protoboard'
+      pip: name=pil virtualenv=/webapps/protoboard/
+    - name: Creando directorio /webapps/protoboard/bin/protoboard/
+      file: path=/webapps/protoboard/bin/protoboard/ state=directory
+    - name: Clonando proyecto de github https://github.com/mariosky/protoboard
+      git: repo=https://github.com/mariosky/protoboard dest=/webapps/protoboard/bin/protoboard/
+    - name: Descargando archivo de configuracion de la aplicacion 'protoboard'
+      get_url: url=https://www.dropbox.com/s/vef7ddymo61ffg6/settings?dl=1 dest=/webapps/protoboard/bin/protoboard/protoboard/ validate_certs=no
+      sudo: True
+    - name: Renombrando archivo de configuracion a settings.py
+      shell: /bin/mv /webapps/protoboard/bin/protoboard/protoboard/settings /webapps/protoboard/bin/protoboard/protoboard/settings.py
+    - name: Exportando variable DJANGO_SETTINGS_MODULE
+      shell: export DJANGO_SETTINGS_MODULE=protoboard.settings
+    - name: Exportando variable PYTHONPATH
+      shell: export PYTHONPATH=/webapps/protoboard/bin/protoboard:$PYTHONPATH
+    - name: Sincronizando basde de datos en 'protoboard'
+      django_manage: app_path=/webapps/protoboard/bin/protoboard/ command=syncdb virtualenv=/webapps/protoboard/ settings=protoboard.settings
+    - name: Creando curso de prueba 'Intro a la POO'
+      shell: export DJANGO_SETTINGS_MODULE=protoboard.settings; export PYTHONPATH=/webapps/protoboard/bin/protoboard:$PYTHONPATH; /webapps/protoboard/bin/python /webapps/protoboard/bin/protoboard/scripts/POO_Intro_Test.py; /webapps/protoboard/bin/python /webapps/protoboard/bin/protoboard/scripts/create_view.py
+    - name: Descargando archivo de configuracion de gunicorn
+      get_url: url=https://www.dropbox.com/s/yo9s8hnieimcdr9/gunicorn_start.bash?dl=1 dest=/webapps/protoboard/bin/ validate_certs=no
+    - name: Cambiando permisos a g+w y dueno:grupo a protoboard:users de /webapps/protoboard/
+      #file: path=/webapps/protoboard/ recurse=yes owner=protoboard group=users mode=g+w
+      shell: chown -R protoboard:users /webapps/protoboard ; chmod -R g+w /webapps/protoboard
+    - name: Anadiendo usuario {{ myuser }} al grupo 'users'
+      user: append=yes groups=users name={{ myuser }}
+    - name: Cambiando permisos a u+x a /webapps/protoboard/bin/gunicorn_start.bash
+      #file: path=/webapps/protoboard/bin/gunicorn_start.bash mode=u+x
+      shell: sudo chmod u+x /webapps/protoboard/bin/gunicorn_start.bash
+    - name: Corriendo 'gunicorn'
+      shell: /bin/bash /webapps/protoboard/bin/gunicorn_start.bash
+      sudo_user: protoboard
+      async: 3
+      poll: 0
+    - name: Instalando 'setproctitle' en el virtualenv 'protoboard'
+      pip: name=setproctitle virtualenv=/webapps/protoboard/
+    - name: Instalando 'supervisor'
+      apt: pkg=supervisor state=installed
+    - name: Creando directorio /etc/supervisor/conf.d/
+      file: state=directory path=/etc/supervisor/conf.d/
+    - name: Descargando archivo de configuracion de 'supervisor'
+      get_url: url=https://www.dropbox.com/s/fvn3xpd89nbqtxt/protoboard.conf?dl=1 dest=/etc/supervisor/conf.d/ validate_certs=no
+    - name: Creando directorio /webapps/protoboard/logs/ para 'supervisor'
+      file: path=/webapps/protoboard/logs/ state=directory
+    - name: Creando archivo para el log de 'supervisor'
+      file: path=/webapps/protoboard/logs/gunicorn_supervisor.log state=touch
+    - name: Reiniciando 'supervisor'
+      shell: sudo supervisorctl reread && sudo supervisorctl update
+    - name: Instalando 'nginx'
+      apt: pkg=nginx state=installed
+    - name: Descargando archivo de configuracion del sitio 'protoboard' para 'nginx'
+      get_url: url=https://www.dropbox.com/s/wu5lbh6ytfax5q1/protoboard?dl=1 dest=/etc/nginx/sites-available/ validate_certs=no
+    - name: Iniciando servicio 'nginx'
+      service: name=nginx enabled=yes state=reloaded
+    - name: Habilitando sitio web 'protoboard' de 'nginx'
+      file: src=/etc/nginx/sites-available/protoboard dest=/etc/nginx/sites-enabled/protoboard state=link
+    - name: Borrando sitio web 'default' de 'nginx'
+      file: path=/etc/nginx/sites-enabled/default state=absent
+    - debug: msg="Se ha finalizado la instalacion de 'protoboard' en tu sistema remoto"
+    - debug: msg="Pasos posteriores recomendados"
+    - debug: msg="* Produccion - Cambiar la contrasena 'secret' de PostgreSQL"
+    - debug: msg="* Produccion - Modificar archivo /etc/nginx/sites-available/protoboard de acuerdo a tus necesidades"
+    - debug: msg="* Desarrollo - Configurar su usuario y correo de git"
+    - debug: msg="* Revisar configuracion en /webapps/protoboard/bin/protoboard/protoboard/settings.py"
+    - debug: msg="* Para correr gunicorns adicionales, ejecutar - /webapps/protoboard/bin/gunicorn_start.bash"
